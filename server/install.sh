@@ -115,6 +115,28 @@ EOF
 fi
 ok "~/.claw/settings.json"
 
+# ── 5b. model_settings.json (per-model config) ─────────────────────
+OMLX_BASE="${HOME}/.omlx"
+run mkdir -p "$OMLX_BASE"
+if [[ ! -f "$OMLX_BASE/model_settings.json" ]] && [[ -f "$CLAW_CONFIG/model_settings.json" ]]; then
+  if ! $DRY_RUN; then
+    cp "$CLAW_CONFIG/model_settings.json" "$OMLX_BASE/model_settings.json"
+  fi
+  ok "Installed model_settings.json → ~/.omlx/"
+else
+  info "model_settings.json already exists"
+fi
+
+# ── 5c. CLAUDE.md (tool instructions for local models) ─────────────
+if [[ ! -f "$CLAW_HOME/CLAUDE.md" ]] && [[ -f "$CLAW_CONFIG/CLAUDE.md" ]]; then
+  if ! $DRY_RUN; then
+    cp "$CLAW_CONFIG/CLAUDE.md" "$CLAW_HOME/CLAUDE.md"
+  fi
+  ok "Installed CLAUDE.md → ~/.claw/"
+else
+  info "CLAUDE.md already exists"
+fi
+
 # ── 6. connection.env for clients ────────────────────────────────────
 LOCAL_IP=$(ipconfig getifaddr en0 2>/dev/null || echo "$(hostname).local")
 
