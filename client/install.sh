@@ -145,11 +145,9 @@ cat > "$CLAW_ENV" <<ENV_EOF
 
 export CLAW_HOME="$CLAW_HOME"
 
-# Server
+# Server (OpenAI-compatible — oMLX serves /v1/chat/completions)
 export OPENAI_API_KEY="${API_KEY:-dummy}"
 export OPENAI_BASE_URL="${SERVER_URL}/v1"
-export ANTHROPIC_API_KEY="${API_KEY:-dummy}"
-export ANTHROPIC_BASE_URL="${SERVER_URL}"
 export CLAW_DEFAULT_MODEL="${DEFAULT_MODEL}"
 
 # PATH
