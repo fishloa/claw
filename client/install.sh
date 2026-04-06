@@ -149,6 +149,8 @@ export CLAW_HOME="$CLAW_HOME"
 export OPENAI_API_KEY="${API_KEY:-dummy}"
 export OPENAI_BASE_URL="${SERVER_URL}/v1"
 export CLAW_DEFAULT_MODEL="${DEFAULT_MODEL}"
+export CLAW_CODER_MODEL="Qwen3-Coder-Next-4bit"
+export CLAW_REVIEWER_MODEL="gemma-4-31b-it-8bit"
 
 # PATH
 export PATH="\$HOME/.local/bin:\$HOME/.cargo/bin:\$PATH"
