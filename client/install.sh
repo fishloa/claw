@@ -155,13 +155,19 @@ export CLAW_REVIEWER_MODEL="gemma-4-31b-it-8bit"
 # PATH
 export PATH="\$HOME/.local/bin:\$HOME/.cargo/bin:\$PATH"
 
-# Aliases
-alias claw-coder='claw --model Qwen3-Coder-Next-4bit'
-alias claw-review='claw --model gemma-4-31b-it-8bit'
-alias claw-fast='claw --model gemma-4-26b-a4b-it-4bit'
-alias claw-general='claw --model Qwen3.5-27B-4bit'
-alias claw-status='curl -s -H "Authorization: Bearer \${OPENAI_API_KEY}" ${SERVER_URL}/v1/models | python3 -m json.tool'
-alias claw-ping='curl -sf -H "Authorization: Bearer \${OPENAI_API_KEY}" ${SERVER_URL}/v1/models >/dev/null && echo "oMLX: OK" || echo "oMLX: UNREACHABLE"'
+# Model shortcuts — wrap claw to resolve short names
+claw() {
+  local model_arg=""
+  case "\$1" in
+    code|coder)   shift; command claw --model "\$CLAW_CODER_MODEL" "\$@"; return ;;
+    review|reason) shift; command claw --model "\$CLAW_REVIEWER_MODEL" "\$@"; return ;;
+    fast)          shift; command claw --model gemma-4-26b-a4b-it-4bit "\$@"; return ;;
+    general)       shift; command claw --model Qwen3.5-27B-4bit "\$@"; return ;;
+    status)        curl -s -H "Authorization: Bearer \${OPENAI_API_KEY}" ${SERVER_URL}/v1/models | python3 -m json.tool; return ;;
+    ping)          curl -sf -H "Authorization: Bearer \${OPENAI_API_KEY}" ${SERVER_URL}/v1/models >/dev/null && echo "oMLX: OK" || echo "oMLX: UNREACHABLE"; return ;;
+  esac
+  command claw "\$@"
+}
 ENV_EOF
 
 rm -f "$HOME/.claw-env"
