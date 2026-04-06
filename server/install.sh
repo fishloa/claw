@@ -1,16 +1,23 @@
 #!/usr/bin/env bash
 # server/install.sh — Bootstrap oMLX on the M2 Ultra
-# Called by: ./setup server
-# All paths reference $REPO_DIR so git pull updates everything in place.
+# Called by: ./setup server [--skip-models] [--dry-run]
+#
+# Reads:   ~/.claw/config/omlx-server.env
+#          ~/.claw/config/models.json
+# Writes:  ~/.claw/settings.json
+#          ~/.claw/api_key
+#          ~/.claw/config/connection.env
+#          ~/.claw/cache/  ~/.claw/logs/
+#          ~/Library/LaunchAgents/com.claw.omlx-server.plist  (symlink)
 
 set -euo pipefail
 
-REPO_DIR="${1:?REPO_DIR required}"
-shift
+REPO_DIR="${1:?REPO_DIR required}"; shift
 
-# ── Flags ────────────────────────────────────────────────────────────
-SKIP_MODELS=false
-DRY_RUN=false
+CLAW_HOME="$HOME/.claw"
+CLAW_CONFIG="$CLAW_HOME/config"
+
+SKIP_MODELS=false; DRY_RUN=false
 for arg in "$@"; do
   case "$arg" in
     --skip-models) SKIP_MODELS=true ;;
@@ -18,8 +25,15 @@ for arg in "$@"; do
   esac
 done
 
-# ── Source config ────────────────────────────────────────────────────
-source "$REPO_DIR/config/omlx-server.env"
+# ── Source config from ~/.claw/config/ ───────────────────────────────
+if [[ ! -f "$CLAW_CONFIG/omlx-server.env" ]]; then
+  echo "ERROR: $CLAW_CONFIG/omlx-server.env not found" >&2; exit 1
+fi
+source "$CLAW_CONFIG/omlx-server.env"
+
+if [[ ! -f "$CLAW_CONFIG/models.json" ]]; then
+  echo "ERROR: $CLAW_CONFIG/models.json not found" >&2; exit 1
+fi
 
 # ── Colours ──────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
@@ -28,70 +42,61 @@ info()  { echo -e "${CYAN}[INFO]${NC}  $*"; }
 ok()    { echo -e "${GREEN}[OK]${NC}    $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
-
-run() { if $DRY_RUN; then echo -e "${YELLOW}[DRY]${NC} $*"; else "$@"; fi; }
+run()   { if $DRY_RUN; then echo -e "${YELLOW}[DRY]${NC} $*"; else "$@"; fi; }
 
 # ── Pre-flight ───────────────────────────────────────────────────────
 info "Pre-flight checks..."
-
-[[ "$(uname -s)" == "Darwin" ]]  || { err "macOS required"; exit 1; }
-[[ "$(uname -m)" == "arm64"  ]]  || { err "Apple Silicon required"; exit 1; }
-command -v brew &>/dev/null       || { err "Homebrew required — https://brew.sh"; exit 1; }
+[[ "$(uname -s)" == "Darwin" ]] || { err "macOS required"; exit 1; }
+[[ "$(uname -m)" == "arm64"  ]] || { err "Apple Silicon required"; exit 1; }
+command -v brew &>/dev/null      || { err "Homebrew required"; exit 1; }
 
 RAM_GB=$(( $(sysctl -n hw.memsize) / 1073741824 ))
 ok "macOS arm64, ${RAM_GB} GB RAM"
 
 # ── 1. Install oMLX ─────────────────────────────────────────────────
-echo ""
-info "Installing oMLX..."
-
+echo ""; info "Installing oMLX..."
 if command -v omlx &>/dev/null; then
   ok "oMLX present — upgrading"
-  run brew update && run brew upgrade omlx 2>/dev/null || true
+  run brew update; run brew upgrade omlx 2>/dev/null || true
 else
   run brew tap jundot/omlx https://github.com/jundot/omlx
   run brew install omlx
 fi
-
 ok "oMLX ready"
 
 # ── 2. huggingface-cli ──────────────────────────────────────────────
-echo ""
-info "Ensuring huggingface-cli..."
-
+echo ""; info "Ensuring huggingface-cli..."
 if ! command -v huggingface-cli &>/dev/null; then
   pip3 install --break-system-packages -q huggingface_hub[cli] 2>/dev/null \
     || pip3 install -q huggingface_hub[cli] 2>/dev/null \
-    || warn "pip3 install failed — download models via oMLX admin UI instead"
+    || warn "Install failed — use oMLX admin UI to download models instead"
 fi
 
 # ── 3. Directories ──────────────────────────────────────────────────
-echo ""
-info "Creating directories..."
+echo ""; info "Creating directories..."
 run mkdir -p "$OMLX_MODEL_DIR"
-run mkdir -p "$OMLX_SSD_CACHE_DIR"
-run mkdir -p "$HOME/.omlx/logs"
+run mkdir -p "$CLAW_HOME/cache"
+run mkdir -p "$CLAW_HOME/logs"
 
-# ── 4. API key (generate once, persist) ──────────────────────────────
-KEYFILE="$HOME/.omlx/api_key"
+# ── 4. API key ───────────────────────────────────────────────────────
+KEYFILE="$CLAW_HOME/api_key"
 if [[ -f "$KEYFILE" ]]; then
   STABLE_API_KEY="$(cat "$KEYFILE")"
   info "Using existing API key"
 else
   STABLE_API_KEY="claw-$(openssl rand -hex 16)"
   if ! $DRY_RUN; then
-    echo "$STABLE_API_KEY" > "$KEYFILE"
-    chmod 600 "$KEYFILE"
+    echo "$STABLE_API_KEY" > "$KEYFILE"; chmod 600 "$KEYFILE"
   fi
   ok "Generated API key → $KEYFILE"
 fi
 
-# ── 5. Write oMLX settings.json ─────────────────────────────────────
-echo ""
-info "Writing oMLX settings..."
+# ── 5. oMLX settings.json ───────────────────────────────────────────
+echo ""; info "Writing oMLX settings..."
+SSD_CACHE="${OMLX_SSD_CACHE_DIR:-$CLAW_HOME/cache}"
 
 if ! $DRY_RUN; then
-  cat > "$HOME/.omlx/settings.json" <<EOF
+  cat > "$CLAW_HOME/settings.json" <<EOF
 {
   "model_dir": "$OMLX_MODEL_DIR",
   "host": "$OMLX_HOST",
@@ -99,69 +104,64 @@ if ! $DRY_RUN; then
   "api_key": "$STABLE_API_KEY",
   "max_process_memory": "$OMLX_MAX_PROCESS_MEMORY",
   "max_model_memory": "$OMLX_MAX_MODEL_MEMORY",
-  "paged_ssd_cache_dir": "$OMLX_SSD_CACHE_DIR",
+  "paged_ssd_cache_dir": "$SSD_CACHE",
   "hot_cache_max_size": "$OMLX_HOT_CACHE_MAX_SIZE",
   "max_concurrent_requests": $OMLX_MAX_CONCURRENT_REQUESTS
 }
 EOF
 fi
-ok "~/.omlx/settings.json"
+ok "~/.claw/settings.json"
 
-# ── 6. Write connection.env for clients ──────────────────────────────
+# ── 6. connection.env for clients ────────────────────────────────────
 LOCAL_IP=$(ipconfig getifaddr en0 2>/dev/null || echo "$(hostname).local")
-CONNECTION_FILE="$REPO_DIR/config/connection.env"
 
 if ! $DRY_RUN; then
-  cat > "$CONNECTION_FILE" <<EOF
+  cat > "$CLAW_CONFIG/connection.env" <<EOF
 # Generated by ./setup server on $(date -Iseconds)
-# Copy this file to client clones: config/connection.env
+# scp this file to client machines: ~/.claw/config/connection.env
 CLAW_SERVER_HOST="${LOCAL_IP}"
 CLAW_SERVER_PORT="${OMLX_PORT}"
 CLAW_API_KEY="${STABLE_API_KEY}"
 CLAW_DEFAULT_MODEL="${OMLX_DEFAULT_MODEL}"
 EOF
-  chmod 600 "$CONNECTION_FILE"
+  chmod 600 "$CLAW_CONFIG/connection.env"
 fi
-ok "config/connection.env (gitignored — scp to clients)"
+ok "~/.claw/config/connection.env"
 
 # ── 7. Download models ──────────────────────────────────────────────
 echo ""
 if $SKIP_MODELS; then
   warn "Skipping model downloads (--skip-models)"
 else
-  info "Downloading models (this may take a while)..."
-
+  info "Downloading models..."
   python3 -c "
 import json
-with open('$REPO_DIR/config/models.json') as f:
+with open('$CLAW_CONFIG/models.json') as f:
     data = json.load(f)
 for m in data['models']:
     print(m['hf_repo'] + '|' + m['id'])
 " | while IFS='|' read -r repo mid; do
     local_path="$OMLX_MODEL_DIR/$mid"
     if [[ -d "$local_path" ]] && ls "$local_path"/*.safetensors &>/dev/null 2>&1; then
-      ok "Already downloaded: $mid"
+      ok "Present: $mid"
     else
       info "Downloading $repo → $mid"
       if command -v huggingface-cli &>/dev/null && ! $DRY_RUN; then
         huggingface-cli download "$repo" --local-dir "$local_path" --local-dir-use-symlinks False
       else
-        warn "  → Download manually or via oMLX admin UI at http://localhost:${OMLX_PORT}/admin"
+        warn "  → Download via oMLX admin: http://localhost:${OMLX_PORT}/admin"
       fi
     fi
   done
 fi
 
-# ── 8. Symlink launchd plist ─────────────────────────────────────────
-echo ""
-info "Setting up launchd service..."
-
-# Generate the plist from the template
-GENERATED_PLIST="$REPO_DIR/server/com.claw.omlx-server.plist"
+# ── 8. launchd plist (generated → ~/.claw/, symlinked into LaunchAgents)
+echo ""; info "Setting up launchd service..."
 OMLX_BIN="$(command -v omlx || echo "/opt/homebrew/bin/omlx")"
+GENERATED_PLIST="$CLAW_HOME/com.claw.omlx-server.plist"
 
 if ! $DRY_RUN; then
-  cat > "$GENERATED_PLIST" <<PLIST_EOF
+  cat > "$GENERATED_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -184,7 +184,7 @@ if ! $DRY_RUN; then
     <string>--max-model-memory</string>
     <string>${OMLX_MAX_MODEL_MEMORY}</string>
     <string>--paged-ssd-cache-dir</string>
-    <string>${OMLX_SSD_CACHE_DIR}</string>
+    <string>${SSD_CACHE}</string>
     <string>--hot-cache-max-size</string>
     <string>${OMLX_HOT_CACHE_MAX_SIZE}</string>
     <string>--max-concurrent-requests</string>
@@ -202,44 +202,40 @@ if ! $DRY_RUN; then
   <key>KeepAlive</key>
   <true/>
   <key>StandardOutPath</key>
-  <string>${HOME}/.omlx/logs/omlx-stdout.log</string>
+  <string>${CLAW_HOME}/logs/omlx-stdout.log</string>
   <key>StandardErrorPath</key>
-  <string>${HOME}/.omlx/logs/omlx-stderr.log</string>
+  <string>${CLAW_HOME}/logs/omlx-stderr.log</string>
   <key>WorkingDirectory</key>
   <string>${HOME}</string>
 </dict>
 </plist>
-PLIST_EOF
+PLIST
 fi
 
-# Symlink into LaunchAgents
 PLIST_LINK="$HOME/Library/LaunchAgents/com.claw.omlx-server.plist"
 mkdir -p "$HOME/Library/LaunchAgents"
-
 if ! $DRY_RUN; then
   launchctl unload "$PLIST_LINK" 2>/dev/null || true
   rm -f "$PLIST_LINK"
   ln -sf "$GENERATED_PLIST" "$PLIST_LINK"
   launchctl load "$PLIST_LINK"
 fi
-
 ok "launchd: $PLIST_LINK → $GENERATED_PLIST"
-info "git pull + ./setup server will regenerate and reload the plist"
 
 # ── Summary ──────────────────────────────────────────────────────────
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
 ok "Server setup complete"
 echo ""
-info "  oMLX:       http://${LOCAL_IP}:${OMLX_PORT}"
-info "  Admin UI:   http://${LOCAL_IP}:${OMLX_PORT}/admin"
-info "  API key:    $(cat "$KEYFILE")"
-info "  Logs:       ~/.omlx/logs/"
+info "  oMLX:     http://${LOCAL_IP}:${OMLX_PORT}"
+info "  Admin:    http://${LOCAL_IP}:${OMLX_PORT}/admin"
+info "  API key:  $(cat "$KEYFILE")"
+info "  Config:   ~/.claw/config/"
+info "  Logs:     ~/.claw/logs/"
 echo ""
 info "  Test:  curl -s http://localhost:${OMLX_PORT}/v1/models | python3 -m json.tool"
 echo ""
-info "  For clients, copy config/connection.env to their repo clones:"
-info "    scp $CONNECTION_FILE <client>:$(basename "$REPO_DIR")/config/connection.env"
+info "  For clients, copy the connection file:"
+info "    scp ~/.claw/config/connection.env <host>:~/.claw/config/"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
