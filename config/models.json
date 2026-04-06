@@ -14,12 +14,12 @@
     {
       "id": "gemma-4-31b-it-8bit",
       "hf_repo": "mlx-community/gemma-4-31b-it-8bit",
-      "role": "reasoning",
-      "description": "31B dense. Top-3 open model. 256K context, native tool calling.",
+      "role": "reviewer",
+      "description": "31B dense. Top-3 open model. 256K context. Review checkpoints.",
       "quant": "8bit",
       "approx_memory_gb": 35,
       "context_length": 262144,
-      "pin": false
+      "pin": true
     },
     {
       "id": "gemma-4-26b-a4b-it-4bit",
@@ -29,8 +29,18 @@
       "quant": "4bit",
       "approx_memory_gb": 15,
       "context_length": 262144,
-      "pin": true
+      "pin": false
+    },
+    {
+      "id": "Qwen3.5-27B-4bit",
+      "hf_repo": "mlx-community/Qwen3.5-27B-4bit",
+      "role": "general-coder",
+      "description": "27.8B dense. Best SWE-bench/GB ratio (72.4). Native tool calling, 262K context.",
+      "quant": "4bit",
+      "approx_memory_gb": 18,
+      "context_length": 262144,
+      "pin": false
     }
   ],
-  "pin_strategy": "Pin Qwen3-Coder-Next + Gemma 4 26B-A4B (~61 GB). Gemma 4 31B loads on demand."
+  "pin_strategy": "Pin Qwen3-Coder-Next + Gemma 4 31B (~80 GB). Others load on demand."
 }

@@ -157,8 +157,9 @@ export PATH="\$HOME/.local/bin:\$HOME/.cargo/bin:\$PATH"
 
 # Aliases
 alias claw-coder='claw --model Qwen3-Coder-Next-4bit'
-alias claw-reason='claw --model gemma-4-31b-it-8bit'
+alias claw-review='claw --model gemma-4-31b-it-8bit'
 alias claw-fast='claw --model gemma-4-26b-a4b-it-4bit'
+alias claw-general='claw --model Qwen3.5-27B-4bit'
 alias claw-status='curl -s -H "Authorization: Bearer \${OPENAI_API_KEY}" ${SERVER_URL}/v1/models | python3 -m json.tool'
 alias claw-ping='curl -sf -H "Authorization: Bearer \${OPENAI_API_KEY}" ${SERVER_URL}/v1/models >/dev/null && echo "oMLX: OK" || echo "oMLX: UNREACHABLE"'
 ENV_EOF
@@ -207,7 +208,7 @@ echo "  source ~/.claw-env    # or open a new shell"
 echo ""
 echo "  claw                          # REPL"
 echo "  claw --model <name> \"prompt\"  # one-shot"
-echo "  claw-coder / claw-reason / claw-fast"
+echo "  claw-coder / claw-review / claw-general / claw-fast"
 echo "  claw-status / claw-ping"
 echo ""
 info "  Config:   ~/.claw/config/"
