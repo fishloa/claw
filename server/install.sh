@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # server/install.sh — Bootstrap oMLX on the M2 Ultra
-# Called by: ./setup server [--skip-models] [--dry-run]
+# Called by: ./setup server [--skip-models] [--rotate-key] [--dry-run]
 #
 # Reads:   ~/.claw/config/omlx-server.env
 #          ~/.claw/config/models.json
@@ -17,11 +17,12 @@ REPO_DIR="${1:?REPO_DIR required}"; shift
 CLAW_HOME="$HOME/.claw"
 CLAW_CONFIG="$CLAW_HOME/config"
 
-SKIP_MODELS=false; DRY_RUN=false
+SKIP_MODELS=false; DRY_RUN=false; ROTATE_KEY=false
 for arg in "$@"; do
   case "$arg" in
     --skip-models) SKIP_MODELS=true ;;
     --dry-run)     DRY_RUN=true ;;
+    --rotate-key)  ROTATE_KEY=true ;;
   esac
 done
 
@@ -64,12 +65,14 @@ else
 fi
 ok "oMLX ready"
 
-# ── 2. huggingface-cli ──────────────────────────────────────────────
-echo ""; info "Ensuring huggingface-cli..."
-if ! command -v huggingface-cli &>/dev/null; then
-  pip3 install --break-system-packages -q huggingface_hub[cli] 2>/dev/null \
-    || pip3 install -q huggingface_hub[cli] 2>/dev/null \
-    || warn "Install failed — use oMLX admin UI to download models instead"
+# ── 2. Resolve oMLX's bundled Python (has huggingface_hub) ──────────
+OMLX_BIN_PATH="$(command -v omlx || echo "/opt/homebrew/bin/omlx")"
+OMLX_PYTHON="$(head -1 "$OMLX_BIN_PATH" | sed 's/^#!//')"
+if [[ -x "$OMLX_PYTHON" ]]; then
+  ok "oMLX Python: $OMLX_PYTHON"
+else
+  OMLX_PYTHON="python3"
+  warn "Could not find oMLX's bundled Python, falling back to system python3"
 fi
 
 # ── 3. Directories ──────────────────────────────────────────────────
@@ -80,15 +83,15 @@ run mkdir -p "$CLAW_HOME/logs"
 
 # ── 4. API key ───────────────────────────────────────────────────────
 KEYFILE="$CLAW_HOME/api_key"
-if [[ -f "$KEYFILE" ]]; then
-  STABLE_API_KEY="$(cat "$KEYFILE")"
-  info "Using existing API key"
-else
+if $ROTATE_KEY || [[ ! -f "$KEYFILE" ]]; then
   STABLE_API_KEY="claw-$(openssl rand -hex 16)"
   if ! $DRY_RUN; then
     echo "$STABLE_API_KEY" > "$KEYFILE"; chmod 600 "$KEYFILE"
   fi
-  ok "Generated API key → $KEYFILE"
+  ok "Generated new API key → $KEYFILE"
+else
+  STABLE_API_KEY="$(cat "$KEYFILE")"
+  info "Using existing API key"
 fi
 
 # ── 5. oMLX settings.json ───────────────────────────────────────────
@@ -106,7 +109,7 @@ if ! $DRY_RUN; then
   "max_model_memory": "$OMLX_MAX_MODEL_MEMORY",
   "paged_ssd_cache_dir": "$SSD_CACHE",
   "hot_cache_max_size": "$OMLX_HOT_CACHE_MAX_SIZE",
-  "max_concurrent_requests": $OMLX_MAX_CONCURRENT_REQUESTS
+  "max_num_seqs": $OMLX_MAX_NUM_SEQS
 }
 EOF
 fi
@@ -133,9 +136,9 @@ echo ""
 if $SKIP_MODELS; then
   warn "Skipping model downloads (--skip-models)"
 else
-  info "Downloading models..."
-  python3 -c "
-import json
+  info "Downloading models (using oMLX's bundled huggingface_hub)..."
+  "$OMLX_PYTHON" -c "
+import json, os, sys
 with open('$CLAW_CONFIG/models.json') as f:
     data = json.load(f)
 for m in data['models']:
@@ -146,10 +149,11 @@ for m in data['models']:
       ok "Present: $mid"
     else
       info "Downloading $repo → $mid"
-      if command -v huggingface-cli &>/dev/null && ! $DRY_RUN; then
-        huggingface-cli download "$repo" --local-dir "$local_path" --local-dir-use-symlinks False
-      else
-        warn "  → Download via oMLX admin: http://localhost:${OMLX_PORT}/admin"
+      if ! $DRY_RUN; then
+        "$OMLX_PYTHON" -c "
+from huggingface_hub import snapshot_download
+snapshot_download('$repo', local_dir='$local_path')
+"
       fi
     fi
   done
@@ -157,7 +161,7 @@ fi
 
 # ── 8. launchd plist (generated → ~/.claw/, symlinked into LaunchAgents)
 echo ""; info "Setting up launchd service..."
-OMLX_BIN="$(command -v omlx || echo "/opt/homebrew/bin/omlx")"
+OMLX_BIN="$OMLX_BIN_PATH"
 GENERATED_PLIST="$CLAW_HOME/com.claw.omlx-server.plist"
 
 if ! $DRY_RUN; then
@@ -187,13 +191,13 @@ if ! $DRY_RUN; then
     <string>${SSD_CACHE}</string>
     <string>--hot-cache-max-size</string>
     <string>${OMLX_HOT_CACHE_MAX_SIZE}</string>
-    <string>--max-concurrent-requests</string>
-    <string>${OMLX_MAX_CONCURRENT_REQUESTS}</string>
+    <string>--max-num-seqs</string>
+    <string>${OMLX_MAX_NUM_SEQS}</string>
+    <string>--api-key</string>
+    <string>${STABLE_API_KEY}</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>OMLX_API_KEY</key>
-    <string>${STABLE_API_KEY}</string>
     <key>PATH</key>
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
@@ -233,7 +237,7 @@ info "  API key:  $(cat "$KEYFILE")"
 info "  Config:   ~/.claw/config/"
 info "  Logs:     ~/.claw/logs/"
 echo ""
-info "  Test:  curl -s http://localhost:${OMLX_PORT}/v1/models | python3 -m json.tool"
+info "  Test:  curl -s -H 'Authorization: Bearer \$(cat ~/.claw/api_key)' http://localhost:${OMLX_PORT}/v1/models | python3 -m json.tool"
 echo ""
 info "  For clients, copy the connection file:"
 info "    scp ~/.claw/config/connection.env <host>:~/.claw/config/"

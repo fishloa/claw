@@ -159,8 +159,8 @@ export PATH="\$HOME/.local/bin:\$HOME/.cargo/bin:\$PATH"
 alias claw-coder='claw --model Qwen3-Coder-Next-4bit'
 alias claw-reason='claw --model gemma-4-31b-it-8bit'
 alias claw-fast='claw --model gemma-4-26b-a4b-it-4bit'
-alias claw-status='curl -s ${SERVER_URL}/v1/models | python3 -m json.tool'
-alias claw-ping='curl -sf ${SERVER_URL}/v1/models >/dev/null && echo "oMLX: OK" || echo "oMLX: UNREACHABLE"'
+alias claw-status='curl -s -H "Authorization: Bearer \${OPENAI_API_KEY}" ${SERVER_URL}/v1/models | python3 -m json.tool'
+alias claw-ping='curl -sf -H "Authorization: Bearer \${OPENAI_API_KEY}" ${SERVER_URL}/v1/models >/dev/null && echo "oMLX: OK" || echo "oMLX: UNREACHABLE"'
 ENV_EOF
 
 rm -f "$HOME/.claw-env"
@@ -186,9 +186,11 @@ source "$CLAW_ENV"
 
 # ── 8. Test ──────────────────────────────────────────────────────────
 echo ""; info "Testing connection..."
-if curl -sf "${SERVER_URL}/v1/models" >/dev/null 2>&1; then
+AUTH_HEADER=""
+[[ -n "${API_KEY:-}" ]] && AUTH_HEADER="Authorization: Bearer ${API_KEY}"
+if curl -sf ${AUTH_HEADER:+-H "$AUTH_HEADER"} "${SERVER_URL}/v1/models" >/dev/null 2>&1; then
   ok "Server reachable at $SERVER_URL"
-  curl -s "${SERVER_URL}/v1/models" 2>/dev/null \
+  curl -s ${AUTH_HEADER:+-H "$AUTH_HEADER"} "${SERVER_URL}/v1/models" 2>/dev/null \
     | python3 -c "import json,sys
 for m in json.load(sys.stdin).get('data',[]): print(f'         • {m[\"id\"]}')" 2>/dev/null || true
 else

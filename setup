@@ -73,9 +73,13 @@ case "$ROLE" in
 
     if [[ -f "$CLAW_HOME/settings.json" ]]; then
       PORT=$(python3 -c "import json; print(json.load(open('$CLAW_HOME/settings.json'))['port'])" 2>/dev/null || echo "?")
-      if curl -sf "http://localhost:${PORT}/v1/models" >/dev/null 2>&1; then
+      API_KEY=""
+      [[ -f "$CLAW_HOME/api_key" ]] && API_KEY="$(cat "$CLAW_HOME/api_key")"
+      AUTH_HEADER=""
+      [[ -n "$API_KEY" ]] && AUTH_HEADER="Authorization: Bearer ${API_KEY}"
+      if curl -sf ${AUTH_HEADER:+-H "$AUTH_HEADER"} "http://localhost:${PORT}/v1/models" >/dev/null 2>&1; then
         ok "oMLX server running :${PORT}"
-        curl -s "http://localhost:${PORT}/v1/models" 2>/dev/null \
+        curl -s ${AUTH_HEADER:+-H "$AUTH_HEADER"} "http://localhost:${PORT}/v1/models" 2>/dev/null \
           | python3 -c "import json,sys
 for m in json.load(sys.stdin).get('data',[]): print(f'         • {m[\"id\"]}')" 2>/dev/null
       else
