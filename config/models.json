@@ -1,0 +1,36 @@
+{
+  "_comment": "Model manifest for M2 Ultra 128 GB — used by server/install.sh",
+  "models": [
+    {
+      "id": "Qwen3-Coder-Next-4bit",
+      "hf_repo": "mlx-community/Qwen3-Coder-Next-4bit",
+      "role": "primary-coder",
+      "description": "80B MoE, 3B active. Agentic coding with tool calling.",
+      "quant": "4bit",
+      "approx_memory_gb": 46,
+      "context_length": 131072,
+      "pin": true
+    },
+    {
+      "id": "gemma-4-31b-it-8bit",
+      "hf_repo": "mlx-community/gemma-4-31b-it-8bit",
+      "role": "reasoning",
+      "description": "31B dense. Top-3 open model. 256K context, native tool calling.",
+      "quant": "8bit",
+      "approx_memory_gb": 35,
+      "context_length": 262144,
+      "pin": false
+    },
+    {
+      "id": "gemma-4-26b-a4b-it-4bit",
+      "hf_repo": "mlx-community/gemma-4-26b-a4b-it-4bit",
+      "role": "auxiliary",
+      "description": "26B MoE, 4B active. Fast triage, summaries, commit messages.",
+      "quant": "4bit",
+      "approx_memory_gb": 15,
+      "context_length": 262144,
+      "pin": true
+    }
+  ],
+  "pin_strategy": "Pin Qwen3-Coder-Next + Gemma 4 26B-A4B (~61 GB). Gemma 4 31B loads on demand."
+}
