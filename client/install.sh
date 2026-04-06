@@ -145,14 +145,10 @@ cat > "$CLAW_ENV" <<ENV_EOF
 
 export CLAW_HOME="$CLAW_HOME"
 
-# Anthropic API (Sonnet 4.6 for reasoning/planning — uses real Anthropic key)
-# ANTHROPIC_API_KEY is inherited from the shell environment (set by Claude Code or export)
-# If not set, claw will only use local models via OpenAI provider.
-
-# Local oMLX server (Qwen3-Coder-Next, Gemma, etc. for coding subagents)
+# Local oMLX server — all models run locally, zero API cost
 export OPENAI_API_KEY="${API_KEY:-dummy}"
 export OPENAI_BASE_URL="${SERVER_URL}/v1"
-export CLAW_DEFAULT_MODEL="claude-sonnet-4-6"
+export CLAW_DEFAULT_MODEL="gemma-4-31b-it-8bit"
 export CLAW_CODER_MODEL="Qwen3-Coder-Next-4bit"
 export CLAW_REVIEWER_MODEL="gemma-4-31b-it-8bit"
 
@@ -167,7 +163,6 @@ claw() {
     review|reason) shift; command claw --model "\$CLAW_REVIEWER_MODEL" "\$@"; return ;;
     fast)          shift; command claw --model gemma-4-26b-a4b-it-4bit "\$@"; return ;;
     general)       shift; command claw --model Qwen3.5-27B-4bit "\$@"; return ;;
-    local)         shift; command claw --model gemma-4-31b-it-8bit "\$@"; return ;;
     status)        curl -s -H "Authorization: Bearer \${OPENAI_API_KEY}" ${SERVER_URL}/v1/models | python3 -m json.tool; return ;;
     ping)          curl -sf -H "Authorization: Bearer \${OPENAI_API_KEY}" ${SERVER_URL}/v1/models >/dev/null && echo "oMLX: OK" || echo "oMLX: UNREACHABLE"; return ;;
   esac
